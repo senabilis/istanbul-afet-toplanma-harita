@@ -48,7 +48,10 @@
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css"/>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
     <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css"/>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
@@ -245,28 +248,308 @@
                     </style>
             
     <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.5/d3.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap">
+    <style>
+        /* ---------- side panel UI ---------- */
+        :root {
+            --ink: #17212b;
+            --ink-2: #4f5b67;
+            --ink-3: #6b7680;
+            --line: #e3e7ea;
+            --wash: #f3f5f6;
+            --panel-w: 380px;
+            --ui-font: "Schibsted Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+        }
+        body {
+            color: var(--ink);
+            background: #fff;
+            font: 400 14.5px/1.5 var(--ui-font);
+            -webkit-font-smoothing: antialiased;
+        }
+        .app { display: grid; grid-template-columns: var(--panel-w) 1fr; height: 100%; }
+        .map-wrap { position: relative; min-width: 0; }
+        .panel {
+            position: relative;
+            z-index: 1000;
+            overflow-y: auto;
+            background: #fff;
+            border-right: 1px solid var(--line);
+            padding: 24px 26px 36px;
+        }
+        .panel button { font: inherit; color: inherit; cursor: pointer; }
+        .panel :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+        .visually-hidden {
+            position: absolute !important;
+            width: 1px; height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+        }
+        .sheet-handle { display: none; }
+
+        .lang {
+            display: inline-flex;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 2px;
+            margin-bottom: 18px;
+        }
+        .lang button {
+            border: 0;
+            background: none;
+            padding: 3px 11px;
+            border-radius: 999px;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--ink-3);
+        }
+        .lang button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+
+        .panel h1 {
+            margin: 0 0 10px;
+            font-size: 27px;
+            line-height: 1.08;
+            font-weight: 800;
+            letter-spacing: -0.025em;
+        }
+        .lede { margin: 0; color: var(--ink-2); }
+
+        .block { border-top: 1px solid var(--line); margin-top: 22px; padding-top: 18px; }
+        .block-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+        .block-title { margin: 0 0 10px; font-size: 15px; line-height: 1.3; font-weight: 700; letter-spacing: -0.01em; }
+        .note { margin: 0 0 10px; font-size: 13px; color: var(--ink-3); }
+        .link-btn {
+            border: 0;
+            background: none;
+            padding: 0;
+            font-size: 13px;
+            color: var(--ink-2);
+            text-decoration: underline;
+            text-underline-offset: 3px;
+        }
+
+        .figures { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 0; }
+        .figures div { display: flex; flex-direction: column-reverse; }
+        .figures dd { margin: 0; font-size: 24px; line-height: 1.1; font-weight: 700; letter-spacing: -0.02em; }
+        .figures dt { margin-top: 3px; font-size: 13px; font-weight: 400; color: var(--ink-2); }
+
+        .legend-caption { margin: 0 0 8px; font-size: 13px; color: var(--ink-2); }
+        .gradient { height: 12px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.12); }
+        .ticks { position: relative; height: 18px; margin: 4px 0 14px; font-size: 11.5px; color: var(--ink-3); }
+        .ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+        .ticks span:first-child { transform: none; }
+
+        .switch {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            width: 100%;
+            border: 0;
+            background: none;
+            padding: 0;
+            text-align: left;
+        }
+        .switch-track {
+            flex: none;
+            position: relative;
+            width: 36px; height: 20px;
+            border-radius: 999px;
+            background: #cfd5da;
+            transition: background 0.15s;
+        }
+        .switch-thumb {
+            position: absolute;
+            top: 2px; left: 2px;
+            width: 16px; height: 16px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+            transition: transform 0.15s;
+        }
+        .switch[aria-checked="true"] .switch-track { background: var(--ink); }
+        .switch[aria-checked="true"] .switch-thumb { transform: translateX(16px); }
+        .switch-label { font-weight: 600; font-size: 14px; }
+
+        .cats { list-style: none; margin: 0; padding: 0; }
+        .cats li + li { margin-top: 1px; }
+        .cat {
+            display: grid;
+            grid-template-columns: 14px 1fr auto;
+            column-gap: 10px;
+            align-items: center;
+            width: 100%;
+            border: 0;
+            background: none;
+            border-radius: 6px;
+            padding: 5px 6px 6px;
+            text-align: left;
+        }
+        .cat:hover { background: var(--wash); }
+        .cat-swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid #000; }
+        .cat-name { font-size: 14px; line-height: 1.3; }
+        .cat-count { font-size: 13px; color: var(--ink-2); }
+        .cat-bar { grid-column: 2 / 4; height: 3px; margin-top: 5px; border-radius: 2px; background: var(--wash); overflow: hidden; }
+        .cat-bar i { display: block; height: 100%; border-radius: 2px; }
+        .cat[aria-pressed="false"] .cat-swatch { background: none !important; border-color: #b9c1c8; }
+        .cat[aria-pressed="false"] .cat-name, .cat[aria-pressed="false"] .cat-count { color: var(--ink-3); }
+        .cat[aria-pressed="false"] .cat-bar i { background: #cfd5da !important; }
+
+        /* "Data sources" button on the map, bottom right above the attribution */
+        .leaflet-control.map-sources-btn {
+            border: 0;
+            background: #fff;
+            color: var(--ink);
+            border-radius: 8px;
+            padding: 7px 12px;
+            font: 600 13px/1.2 var(--ui-font);
+            box-shadow: 0 1px 4px rgba(23, 33, 43, 0.25);
+            cursor: pointer;
+        }
+        .leaflet-control.map-sources-btn:hover { background: var(--wash); }
+        .leaflet-control.map-sources-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+        .icon-btn {
+            flex: none;
+            border: 0;
+            background: none;
+            width: 34px; height: 34px;
+            border-radius: 999px;
+            font-size: 24px;
+            line-height: 1;
+            color: var(--ink-2);
+            cursor: pointer;
+        }
+        .icon-btn:hover { background: var(--wash); }
+
+        /* data sources dialog */
+        .sources-dialog {
+            width: min(560px, calc(100% - 32px));
+            max-height: calc(100% - 48px);
+            padding: 0;
+            border: 0;
+            border-radius: 14px;
+            color: var(--ink);
+            font: 400 14.5px/1.5 var(--ui-font);
+            box-shadow: 0 24px 60px rgba(23, 33, 43, 0.28);
+        }
+        .sources-dialog::backdrop { background: rgba(23, 33, 43, 0.45); }
+        .dialog-inner { padding: 20px 24px 24px; }
+        .dialog-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-right: -8px; }
+        .dialog-head h2 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.015em; }
+        .sources p, .sources li { font-size: 14px; color: var(--ink-2); }
+        .sources p { margin: 12px 0 0; }
+        .sources ol { padding-left: 20px; margin: 12px 0 0; }
+        .sources li + li { margin-top: 8px; }
+        .sources li::marker { font-variant-numeric: normal; }
+        .sources a { color: var(--ink); word-break: break-word; }
+        .sources-dialog :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+        /* map tooltips */
+        .leaflet-container { font-family: var(--ui-font); }
+        .leaflet-tooltip.foliumtooltip {
+            font: 400 13px/1.35 var(--ui-font);
+            color: var(--ink);
+            padding: 8px 11px;
+            border: 0;
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(23, 33, 43, 0.18), 0 1px 3px rgba(23, 33, 43, 0.12);
+        }
+        .foliumtooltip table { border-collapse: collapse; }
+        .foliumtooltip th { font-weight: 400; color: var(--ink-2); padding: 2px 14px 2px 0; text-align: left; vertical-align: top; }
+        .foliumtooltip td { font-weight: 600; padding: 2px 0; }
+
+        /* phones: the panel becomes a bottom sheet */
+        @media (max-width: 760px) {
+            .app { display: block; }
+            .map-wrap { position: fixed; inset: 0; }
+            .panel {
+                position: fixed;
+                left: 0; right: 0; bottom: 0;
+                height: 40vh;
+                border-right: 0;
+                border-radius: 16px 16px 0 0;
+                box-shadow: 0 -8px 30px rgba(23, 33, 43, 0.18);
+                padding: 0 18px 28px;
+                transition: height 0.25s ease;
+            }
+            .panel.is-open { height: 85vh; }
+            .sheet-handle {
+                display: block;
+                position: sticky;
+                top: 0;
+                z-index: 1;
+                width: calc(100% + 36px);
+                margin: 0 -18px 4px;
+                padding: 10px 0 12px;
+                border: 0;
+                background: #fff;
+            }
+            .sheet-grip { display: block; width: 40px; height: 4px; margin: 0 auto; border-radius: 2px; background: #cfd5da; }
+            .panel h1 { font-size: 22px; }
+            .leaflet-bottom { bottom: 40vh; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .panel, .switch-track, .switch-thumb { transition: none; }
+        }
+    </style>
 </head>
 <body>
-    
-    
-    <div style="
-        position: fixed; 
-        bottom: 50px; 
-        left: 50px; 
-        width: 250px; 
-        height: auto; 
-        border:2px solid grey; 
-        z-index:9999; 
-        font-size:14px; 
-        background-color:white;
-        padding: 10px;
-        ">
-        <b>Evacuation Areas / Tahliye Alanları</b><br>
-    <i style="background:#4169E1;width:10px;height:10px;display:inline-block;margin-right:5px;"></i> Eğitim Tesisleri / Educational Institutions<br><i style="background:#9932CC;width:10px;height:10px;display:inline-block;margin-right:5px;"></i> Kültür ve Sanat Mekanları / Cultural Venues<br><i style="background:#20B2AA;width:10px;height:10px;display:inline-block;margin-right:5px;"></i> Spor Tesisleri / Sports Facilities<br><i style="background:#228B22;width:10px;height:10px;display:inline-block;margin-right:5px;"></i> Yeşil Alanlar / Green Spaces<br><i style="background:#FF8C00;width:10px;height:10px;display:inline-block;margin-right:5px;"></i> Ulaşım Merkezleri ve Ulaşım Ağları / Transportation Hubs<br><i style="background:#FF1493;width:10px;height:10px;display:inline-block;margin-right:5px;"></i> Alışveriş ve Ticaret Merkezleri / Commercial Centers<br><i style="background:#8B4513;width:10px;height:10px;display:inline-block;margin-right:5px;"></i> Dini Tesisler / Religious Facilities<br><i style="background:#4B0082;width:10px;height:10px;display:inline-block;margin-right:5px;"></i> Pazar Alanları / Marketplaces<br><i style="background:#FF0000;width:10px;height:10px;display:inline-block;margin-right:5px;"></i> Kentsel Bulusma Noktaları / Social Gathering Spaces<br><i style="background:#696969;width:10px;height:10px;display:inline-block;margin-right:5px;"></i> Bilinmeyen / Unknown<br></div>
-    <h3 align="center" style="font-size:16px"><b>İstanbul Mahallelerinde Nüfus Yoğunluğu ve Afet Toplanma Alanları 2025</b></h3>
-    
+    <div class="app">
+        <aside class="panel" id="panel">
+            <button class="sheet-handle" id="sheetHandle" type="button" aria-expanded="false" aria-controls="panel">
+                <span class="sheet-grip" aria-hidden="true"></span>
+                <span class="visually-hidden" data-i18n="sheetToggle">Paneli büyüt veya küçült</span>
+            </button>
+
+            <div class="lang" role="group" aria-label="Dil / Language">
+                <button type="button" data-lang="tr" aria-pressed="true">TR</button>
+                <button type="button" data-lang="en" aria-pressed="false">EN</button>
+            </div>
+            <h1 data-i18n="title">İstanbul mahallelerinde nüfus yoğunluğu ve afet toplanma alanları, 2025</h1>
+            <p class="lede" data-i18n="lede">Renkler mahallelerin nüfus yoğunluğunu gösterir. Bir toplanma alanının adını, ilçesini ve büyüklüğünü görmek için üzerine gelin ya da dokunun.</p>
+
+            <section class="block">
+                <dl class="figures" id="figures"></dl>
+            </section>
+
+            <section class="block">
+                <h2 class="block-title" data-i18n="densityTitle">Nüfus yoğunluğu</h2>
+                <p class="legend-caption" data-i18n="densityCaption">Kilometrekare başına kişi</p>
+                <div class="gradient" id="gradient"></div>
+                <div class="ticks" id="ticks"></div>
+                <button class="switch" id="toggleDensity" type="button" role="switch" aria-checked="true">
+                    <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+                    <span class="switch-label" data-i18n="densityToggle">Mahalle renklerini göster</span>
+                </button>
+            </section>
+
+            <section class="block">
+                <div class="block-row">
+                    <h2 class="block-title" data-i18n="catsTitle">Toplanma alanı türleri</h2>
+                    <button class="link-btn" id="catsAll" type="button" data-i18n="showAll" hidden>Tümünü göster</button>
+                </div>
+                <p class="note" data-i18n="catsHint">Haritada göstermek ya da gizlemek için bir türe tıklayın.</p>
+                <ul class="cats" id="cats"></ul>
+            </section>
+        </aside>
+
+        <main class="map-wrap">
             <div class="folium-map" id="map_3a8974ce34379f09c8e14a9b4791fa8d" ></div>
-        
+        </main>
+    </div>
+
+    <dialog class="sources-dialog" id="sourcesDialog" aria-labelledby="sourcesHeading">
+        <div class="dialog-inner">
+            <div class="dialog-head">
+                <h2 id="sourcesHeading" data-i18n="sourcesTitle">Veri kaynakları</h2>
+                <button class="icon-btn" id="sourcesClose" type="button">
+                    <span aria-hidden="true">×</span><span class="visually-hidden" data-i18n="close">Kapat</span>
+                </button>
+            </div>
+            <div class="sources" id="sources"></div>
+        </div>
+    </dialog>
 </body>
 <script>
     
@@ -289,21 +572,13 @@
 
         
     
-            var tile_layer_ae84f27c6ecc6c87401555b4e8ea0013 = L.tileLayer(
-                "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-                {
-  "minZoom": 0,
-  "maxZoom": 20,
-  "maxNativeZoom": 20,
-  "noWrap": false,
-  "attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors \u0026copy; \u003ca href=\"https://carto.com/attributions\"\u003eCARTO\u003c/a\u003e",
-  "subdomains": "abcd",
-  "detectRetina": false,
-  "tms": false,
-  "opacity": 1,
-}
-
-            );
+            var tile_layer_ae84f27c6ecc6c87401555b4e8ea0013 = L.maplibreGL({
+                // Keyless vector basemap in CARTO's Positron style
+                style: "https://tiles.openfreemap.org/styles/positron",
+                attributionControl: {
+                    customAttribution: '<a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> <a href="https://www.openmaptiles.org/" target="_blank">&copy; OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
+                },
+            });
         
     
             tile_layer_ae84f27c6ecc6c87401555b4e8ea0013.addTo(map_3a8974ce34379f09c8e14a9b4791fa8d);
@@ -900,7 +1175,7 @@
     
     let handleObject = feature=>typeof(feature)=='object' ? JSON.stringify(feature) : feature;
     let fields = ["name", "pop_density", "total_population", "area"];
-    let aliases = ["Neighborhood", "Population Density (people/m\u00b2)", "Total Population", "Area (m\u00b2)"];
+    let aliases = fields.map(tipLabel);
     let table = '<table>' +
         String(
         fields.map(
@@ -908,7 +1183,7 @@
         `<tr>
             <th>${aliases[i].toLocaleString()}</th>
             
-            <td>${handleObject(layer.feature.properties[v]).toLocaleString()}</td>
+            <td>${tipValue(v, layer.feature.properties)}</td>
         </tr>`).join(''))
     +'</table>';
     div.innerHTML=table;
@@ -963,7 +1238,7 @@
     
     let handleObject = feature=>typeof(feature)=='object' ? JSON.stringify(feature) : feature;
     let fields = ["tesis_adi", "ilce_adi", "area", "type_translated"];
-    let aliases = ["Facility Name", "District", "Area (m\u00b2)", "Type"];
+    let aliases = fields.map(tipLabel);
     let table = '<table>' +
         String(
         fields.map(
@@ -971,7 +1246,7 @@
         `<tr>
             <th>${aliases[i].toLocaleString()}</th>
             
-            <td>${handleObject(layer.feature.properties[v]).toLocaleString()}</td>
+            <td>${tipValue(v, layer.feature.properties)}</td>
         </tr>`).join(''))
     +'</table>';
     div.innerHTML=table;
@@ -1029,7 +1304,7 @@
     
     let handleObject = feature=>typeof(feature)=='object' ? JSON.stringify(feature) : feature;
     let fields = ["tesis_adi", "ilce_adi", "area", "type_translated"];
-    let aliases = ["Facility Name", "District", "Area (m\u00b2)", "Type"];
+    let aliases = fields.map(tipLabel);
     let table = '<table>' +
         String(
         fields.map(
@@ -1037,7 +1312,7 @@
         `<tr>
             <th>${aliases[i].toLocaleString()}</th>
             
-            <td>${handleObject(layer.feature.properties[v]).toLocaleString()}</td>
+            <td>${tipValue(v, layer.feature.properties)}</td>
         </tr>`).join(''))
     +'</table>';
     div.innerHTML=table;
@@ -1095,7 +1370,7 @@
     
     let handleObject = feature=>typeof(feature)=='object' ? JSON.stringify(feature) : feature;
     let fields = ["tesis_adi", "ilce_adi", "area", "type_translated"];
-    let aliases = ["Facility Name", "District", "Area (m\u00b2)", "Type"];
+    let aliases = fields.map(tipLabel);
     let table = '<table>' +
         String(
         fields.map(
@@ -1103,7 +1378,7 @@
         `<tr>
             <th>${aliases[i].toLocaleString()}</th>
             
-            <td>${handleObject(layer.feature.properties[v]).toLocaleString()}</td>
+            <td>${tipValue(v, layer.feature.properties)}</td>
         </tr>`).join(''))
     +'</table>';
     div.innerHTML=table;
@@ -1161,7 +1436,7 @@
     
     let handleObject = feature=>typeof(feature)=='object' ? JSON.stringify(feature) : feature;
     let fields = ["tesis_adi", "ilce_adi", "area", "type_translated"];
-    let aliases = ["Facility Name", "District", "Area (m\u00b2)", "Type"];
+    let aliases = fields.map(tipLabel);
     let table = '<table>' +
         String(
         fields.map(
@@ -1169,7 +1444,7 @@
         `<tr>
             <th>${aliases[i].toLocaleString()}</th>
             
-            <td>${handleObject(layer.feature.properties[v]).toLocaleString()}</td>
+            <td>${tipValue(v, layer.feature.properties)}</td>
         </tr>`).join(''))
     +'</table>';
     div.innerHTML=table;
@@ -1227,7 +1502,7 @@
     
     let handleObject = feature=>typeof(feature)=='object' ? JSON.stringify(feature) : feature;
     let fields = ["tesis_adi", "ilce_adi", "area", "type_translated"];
-    let aliases = ["Facility Name", "District", "Area (m\u00b2)", "Type"];
+    let aliases = fields.map(tipLabel);
     let table = '<table>' +
         String(
         fields.map(
@@ -1235,7 +1510,7 @@
         `<tr>
             <th>${aliases[i].toLocaleString()}</th>
             
-            <td>${handleObject(layer.feature.properties[v]).toLocaleString()}</td>
+            <td>${tipValue(v, layer.feature.properties)}</td>
         </tr>`).join(''))
     +'</table>';
     div.innerHTML=table;
@@ -1293,7 +1568,7 @@
     
     let handleObject = feature=>typeof(feature)=='object' ? JSON.stringify(feature) : feature;
     let fields = ["tesis_adi", "ilce_adi", "area", "type_translated"];
-    let aliases = ["Facility Name", "District", "Area (m\u00b2)", "Type"];
+    let aliases = fields.map(tipLabel);
     let table = '<table>' +
         String(
         fields.map(
@@ -1301,7 +1576,7 @@
         `<tr>
             <th>${aliases[i].toLocaleString()}</th>
             
-            <td>${handleObject(layer.feature.properties[v]).toLocaleString()}</td>
+            <td>${tipValue(v, layer.feature.properties)}</td>
         </tr>`).join(''))
     +'</table>';
     div.innerHTML=table;
@@ -1359,7 +1634,7 @@
     
     let handleObject = feature=>typeof(feature)=='object' ? JSON.stringify(feature) : feature;
     let fields = ["tesis_adi", "ilce_adi", "area", "type_translated"];
-    let aliases = ["Facility Name", "District", "Area (m\u00b2)", "Type"];
+    let aliases = fields.map(tipLabel);
     let table = '<table>' +
         String(
         fields.map(
@@ -1367,7 +1642,7 @@
         `<tr>
             <th>${aliases[i].toLocaleString()}</th>
             
-            <td>${handleObject(layer.feature.properties[v]).toLocaleString()}</td>
+            <td>${tipValue(v, layer.feature.properties)}</td>
         </tr>`).join(''))
     +'</table>';
     div.innerHTML=table;
@@ -1425,7 +1700,7 @@
     
     let handleObject = feature=>typeof(feature)=='object' ? JSON.stringify(feature) : feature;
     let fields = ["tesis_adi", "ilce_adi", "area", "type_translated"];
-    let aliases = ["Facility Name", "District", "Area (m\u00b2)", "Type"];
+    let aliases = fields.map(tipLabel);
     let table = '<table>' +
         String(
         fields.map(
@@ -1433,7 +1708,7 @@
         `<tr>
             <th>${aliases[i].toLocaleString()}</th>
             
-            <td>${handleObject(layer.feature.properties[v]).toLocaleString()}</td>
+            <td>${tipValue(v, layer.feature.properties)}</td>
         </tr>`).join(''))
     +'</table>';
     div.innerHTML=table;
@@ -1491,7 +1766,7 @@
     
     let handleObject = feature=>typeof(feature)=='object' ? JSON.stringify(feature) : feature;
     let fields = ["tesis_adi", "ilce_adi", "area", "type_translated"];
-    let aliases = ["Facility Name", "District", "Area (m\u00b2)", "Type"];
+    let aliases = fields.map(tipLabel);
     let table = '<table>' +
         String(
         fields.map(
@@ -1499,7 +1774,7 @@
         `<tr>
             <th>${aliases[i].toLocaleString()}</th>
             
-            <td>${handleObject(layer.feature.properties[v]).toLocaleString()}</td>
+            <td>${tipValue(v, layer.feature.properties)}</td>
         </tr>`).join(''))
     +'</table>';
     div.innerHTML=table;
@@ -1557,7 +1832,7 @@
     
     let handleObject = feature=>typeof(feature)=='object' ? JSON.stringify(feature) : feature;
     let fields = ["tesis_adi", "ilce_adi", "area", "type_translated"];
-    let aliases = ["Facility Name", "District", "Area (m\u00b2)", "Type"];
+    let aliases = fields.map(tipLabel);
     let table = '<table>' +
         String(
         fields.map(
@@ -1565,7 +1840,7 @@
         `<tr>
             <th>${aliases[i].toLocaleString()}</th>
             
-            <td>${handleObject(layer.feature.properties[v]).toLocaleString()}</td>
+            <td>${tipValue(v, layer.feature.properties)}</td>
         </tr>`).join(''))
     +'</table>';
     div.innerHTML=table;
@@ -1598,7 +1873,6 @@
 
     color_map_8a1d4081ac044a54bc2c4fad609b75b7.legend = L.control({position: 'topright'});
     color_map_8a1d4081ac044a54bc2c4fad609b75b7.legend.onAdd = function (map) {var div = L.DomUtil.create('div', 'legend'); return div};
-    color_map_8a1d4081ac044a54bc2c4fad609b75b7.legend.addTo(map_3a8974ce34379f09c8e14a9b4791fa8d);
 
     color_map_8a1d4081ac044a54bc2c4fad609b75b7.xAxis = d3.svg.axis()
         .scale(color_map_8a1d4081ac044a54bc2c4fad609b75b7.x)
@@ -1638,7 +1912,7 @@
     
             var layer_control_b9a53e474defa45542182747cf2c387e_layers = {
                 base_layers : {
-                    "cartodbpositron" : tile_layer_ae84f27c6ecc6c87401555b4e8ea0013,
+                    "Positron" : tile_layer_ae84f27c6ecc6c87401555b4e8ea0013,
                 },
                 overlays :  {
                     "macro_element_e4d297fde1ac6f89837f8b785cbe5862" : geo_json_e4d297fde1ac6f89837f8b785cbe5862,
@@ -1662,60 +1936,270 @@
   "collapsed": true,
   "autoZIndex": true,
 }
-            ).addTo(map_3a8974ce34379f09c8e14a9b4791fa8d);
+            );
+        
+</script>
+<script>
+    // ---------- side panel and TR/EN language switch ----------
+    (function () {
+        "use strict";
 
-        
-        // Add sources/attribution box
-        var sourcesControl = L.control({position: 'bottomright'});
-        
-        sourcesControl.onAdd = function (map) {
-            var div = L.DomUtil.create('div', 'sources-box leaflet-control');
-            
-            div.innerHTML = `
-                <div class="sources-content">
-                    <h4 style="margin-top: 0; margin-bottom: 10px; font-size: 13px; font-weight: bold; border-bottom: 1px solid #ddd; padding-bottom: 6px;">Veri Kaynakları / Data Sources</h4>
-                    
-                    <div style="margin-bottom: 8px;">
-                        <p style="margin: 0 0 6px 0; font-size: 11px; line-height: 1.3;">
-                            Nüfus yoğunluğu için TÜİK (2024) ve WorldPop (2020) verileri; afet toplanma alanlarının adı, konumu, büyüklüğü ve kullanım durumuna ilişkin bilgiler içinse AFAD / E-Devlet kayıtları kullanılmaktadır.
-                        </p>
-                    </div>
-                    
-                    <div style="font-size: 10px; line-height: 1.3;">
-                        <p style="margin: 0 0 5px 0;">
-                            <strong>1.</strong> TÜİK (2024). MEDAS. Erişim: 24.04.2025<br>
-                            <a href="https://biruni.tuik.gov.tr/medas/?kn=95&locale=tr" target="_blank" style="margin-left: 12px; color: #0066cc; text-decoration: none; font-size: 9px;">
-                                biruni.tuik.gov.tr/medas
-                            </a>
-                        </p>
-                        
-                        <p style="margin: 0 0 5px 0;">
-                            <strong>2.</strong> WorldPop (2020). Population Turkey. Erişim: 10.01.2025<br>
-                            <a href="https://hub.worldpop.org/geodata/summary?id=6443" target="_blank" style="margin-left: 12px; color: #0066cc; text-decoration: none; font-size: 9px;">
-                                hub.worldpop.org/geodata
-                            </a>
-                        </p>
-                        
-                        <p style="margin: 0 0 5px 0;">
-                            <strong>3.</strong> AFAD/E-Devlet. Toplanma Alanı. Erişim: 10.01.2025<br>
-                            <a href="https://www.turkiye.gov.tr/afet-ve-acil-durum-yonetimi-acil-toplanma-alani-sorgulama" target="_blank" style="margin-left: 12px; color: #0066cc; text-decoration: none; font-size: 9px;">
-                                turkiye.gov.tr/afet-toplanma
-                            </a>
-                        </p>
-                    </div>
-                    
-                    <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #ddd; font-size: 10px; line-height: 1.3; font-style: italic;">
-                        <p style="margin: 0;">
-                            Özyeğin Üniversitesi, Dr. Öğr. Üyesi D. Mutman Uluengin ve Dr. Öğr. Üyesi D. Dinemis Aman danışmanlığında S. Biliş Özgün tarafından hazırlanan "Kentsel Boşluk Olarak Afet Toplanma Alanlarının Potansiyelleri: İstanbul Bağcılar" tezi kapsamında geliştirilmiştir.
-                        </p>
-                    </div>
-                </div>
-            `;
-            
-            return div;
+        const map = map_3a8974ce34379f09c8e14a9b4791fa8d;
+        const hoodLayer = geo_json_e4d297fde1ac6f89837f8b785cbe5862;
+        const colorMap = color_map_8a1d4081ac044a54bc2c4fad609b75b7;
+
+        // Colors match the fills used on the map.
+        const CATS = [
+            { tr: "Yeşil alanlar", en: "Green spaces", color: "#228B22", group: feature_group_51aa63cc0e15828eafa2abfea1a3b951, layer: geo_json_79d9cb017ce4220e1d7c46552aa610eb },
+            { tr: "Eğitim tesisleri", en: "Educational institutions", color: "#4169E1", group: feature_group_22c508a547fe23e978ca58211775678b, layer: geo_json_bb32809961a7b137f45e2e1b5c26b98b },
+            { tr: "Spor tesisleri", en: "Sports facilities", color: "#20B2AA", group: feature_group_309ac77916a9ba8e550900ceedfa81d3, layer: geo_json_472c94817423b49ad063b73defd59e88 },
+            { tr: "Dini tesisler", en: "Religious facilities", color: "#8B4513", group: feature_group_d17d0cfb52164089e0c733187559c5c3, layer: geo_json_5b400cc52feb7520b5c29725c5120214 },
+            { tr: "Ulaşım merkezleri ve ulaşım ağları", en: "Transportation hubs", color: "#FF8C00", group: feature_group_6669d0dd4f0a4067c8cc854b8f7ab0f8, layer: geo_json_87a3cae7ebb06157315b31c771f255d0 },
+            { tr: "Kentsel buluşma noktaları", en: "Social gathering spaces", color: "#FF0000", group: feature_group_5cc468787f4aab094ff85b0790f2ac36, layer: geo_json_02887494ef508294914e558b4feb6658 },
+            { tr: "Kültür ve sanat mekânları", en: "Cultural venues", color: "#9932CC", group: feature_group_d18b1aaff79628b4cd8ffe9bb1795385, layer: geo_json_8eff9160832e1df904d07e2053f83530 },
+            { tr: "Pazar alanları", en: "Marketplaces", color: "#4B0082", group: feature_group_3e10dac180bf299bc4af5bd3ad6cbdf6, layer: geo_json_1a8a321b3b70e8c44735b23c6b0bfbfd },
+            { tr: "Alışveriş ve ticaret merkezleri", en: "Commercial centers", color: "#FF1493", group: feature_group_57501daa42ff9f91365aabedfeca99a9, layer: geo_json_7c9a6da8121ba7c299692d04190b5c3e },
+            { tr: "Bilinmeyen", en: "Unknown", color: "#696969", group: feature_group_429a5bf2971f3886dee638816f35a4f8, layer: geo_json_16a2a2fe0bead436e1219f9217d2b478 },
+        ];
+
+        const STR = {
+            tr: {
+                docTitle: "İstanbul Afet Toplanma Alanları Haritası",
+                sheetToggle: "Paneli büyüt veya küçült",
+                title: "İstanbul mahallelerinde nüfus yoğunluğu ve afet toplanma alanları, 2025",
+                lede: "Renkler mahallelerin nüfus yoğunluğunu gösterir. Bir toplanma alanının adını, ilçesini ve büyüklüğünü görmek için üzerine gelin ya da dokunun.",
+                figAreas: "afet toplanma alanı",
+                figSpace: "km² toplam alan",
+                figHoods: "mahalle",
+                figPop: "tahmini nüfus",
+                million: (n) => `${n} milyon`,
+                thousand: (n) => `${n} bin`,
+                densityTitle: "Nüfus yoğunluğu",
+                densityCaption: "Kilometrekare başına kişi",
+                densityToggle: "Mahalle renklerini göster",
+                catsTitle: "Toplanma alanı türleri",
+                catsHint: "Haritada göstermek ya da gizlemek için bir türe tıklayın.",
+                showAll: "Tümünü göster",
+                sourcesTitle: "Veri kaynakları",
+                close: "Kapat",
+                tip: {
+                    name: "Mahalle", pop_density: "Nüfus yoğunluğu", total_population: "Toplam nüfus", area: "Alan",
+                    tesis_adi: "Tesis adı", ilce_adi: "İlçe", type_translated: "Tür",
+                },
+                perKm2: "kişi/km²",
+                sources: `
+                    <p>Nüfus yoğunluğu için TÜİK (2024) ve WorldPop (2020) verileri; afet toplanma alanlarının adı, konumu, büyüklüğü ve kullanım durumuna ilişkin bilgiler içinse AFAD / E-Devlet kayıtları kullanılmaktadır.</p>
+                    <ol>
+                        <li>TÜİK (2024). MEDAS. Erişim: 24.04.2025. <a href="https://biruni.tuik.gov.tr/medas/?kn=95&locale=tr" target="_blank" rel="noopener">biruni.tuik.gov.tr/medas</a></li>
+                        <li>WorldPop (2020). Population Turkey. Erişim: 10.01.2025. <a href="https://hub.worldpop.org/geodata/summary?id=6443" target="_blank" rel="noopener">hub.worldpop.org/geodata</a></li>
+                        <li>AFAD/E-Devlet. Toplanma Alanı. Erişim: 10.01.2025. <a href="https://www.turkiye.gov.tr/afet-ve-acil-durum-yonetimi-acil-toplanma-alani-sorgulama" target="_blank" rel="noopener">turkiye.gov.tr/afet-toplanma</a></li>
+                    </ol>
+                    <p>Özyeğin Üniversitesi, Dr. Öğr. Üyesi D. Mutman Uluengin ve Dr. Öğr. Üyesi D. Dinemis Aman danışmanlığında S. Biliş Özgün tarafından hazırlanan “Kentsel Boşluk Olarak Afet Toplanma Alanlarının Potansiyelleri: İstanbul Bağcılar” tezi kapsamında geliştirilmiştir.</p>`,
+            },
+            en: {
+                docTitle: "Istanbul Disaster Assembly Areas Map",
+                sheetToggle: "Expand or collapse the panel",
+                title: "Population density and disaster assembly areas in Istanbul’s neighborhoods, 2025",
+                lede: "Colors show how densely each neighborhood is populated. Hover over or tap an assembly area to see its name, district and size.",
+                figAreas: "disaster assembly areas",
+                figSpace: "km² in total",
+                figHoods: "neighborhoods",
+                figPop: "estimated residents",
+                million: (n) => `${n} million`,
+                thousand: (n) => `${n}k`,
+                densityTitle: "Population density",
+                densityCaption: "People per square kilometre",
+                densityToggle: "Show neighborhood colors",
+                catsTitle: "Types of assembly area",
+                catsHint: "Click a type to show or hide it on the map.",
+                showAll: "Show all",
+                sourcesTitle: "Data sources",
+                close: "Close",
+                tip: {
+                    name: "Neighborhood", pop_density: "Population density", total_population: "Total population", area: "Area",
+                    tesis_adi: "Facility name", ilce_adi: "District", type_translated: "Type",
+                },
+                perKm2: "people/km²",
+                sources: `
+                    <p>Population density uses TÜİK (2024) and WorldPop (2020) data. The names, locations, sizes and use of the assembly areas come from AFAD / e-Devlet records.</p>
+                    <ol>
+                        <li>TÜİK (2024). MEDAS. Accessed 24.04.2025. <a href="https://biruni.tuik.gov.tr/medas/?kn=95&locale=tr" target="_blank" rel="noopener">biruni.tuik.gov.tr/medas</a></li>
+                        <li>WorldPop (2020). Population Turkey. Accessed 10.01.2025. <a href="https://hub.worldpop.org/geodata/summary?id=6443" target="_blank" rel="noopener">hub.worldpop.org/geodata</a></li>
+                        <li>AFAD/e-Devlet. Assembly area lookup. Accessed 10.01.2025. <a href="https://www.turkiye.gov.tr/afet-ve-acil-durum-yonetimi-acil-toplanma-alani-sorgulama" target="_blank" rel="noopener">turkiye.gov.tr/afet-toplanma</a></li>
+                    </ol>
+                    <p>Developed as part of the thesis “Kentsel Boşluk Olarak Afet Toplanma Alanlarının Potansiyelleri: İstanbul Bağcılar” by S. Biliş Özgün, supervised by Asst. Prof. D. Mutman Uluengin and Asst. Prof. D. Dinemis Aman, Özyeğin University.</p>`,
+            },
         };
-        
-        sourcesControl.addTo(map_3a8974ce34379f09c8e14a9b4791fa8d);
-        
+
+        let lang = initialLang();
+        const t = (key) => STR[lang][key];
+        const fmt = (n, digits = 0) =>
+            new Intl.NumberFormat(lang === "tr" ? "tr-TR" : "en-GB", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n);
+        const num = (v) => (v === null || v === undefined || v === "" || v === "None" ? null : Number(v));
+        const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+        function initialLang() {
+            const fromUrl = new URLSearchParams(location.search).get("lang");
+            if (fromUrl === "tr" || fromUrl === "en") return fromUrl;
+            try {
+                const saved = localStorage.getItem("lang");
+                if (saved === "tr" || saved === "en") return saved;
+            } catch (e) { /* storage unavailable */ }
+            return (navigator.language || "tr").toLowerCase().startsWith("tr") ? "tr" : "en";
+        }
+
+        // ÜMRANİYE -> Ümraniye
+        function titleTr(text) {
+            const lower = String(text).toLocaleLowerCase("tr");
+            return lower.replace(/(^|[\s(\-])(\S)/g, (m, sep, ch) => sep + ch.toLocaleUpperCase("tr"));
+        }
+
+        // Called by the map tooltips (see bindTooltip above), so they follow the chosen language.
+        window.tipLabel = (field) => STR[lang].tip[field] || field;
+        window.tipValue = (field, props) => {
+            const v = props[field];
+            const isFacility = props.tesis_adi !== undefined;
+            switch (field) {
+                case "pop_density": return num(v) === null ? "–" : `${fmt(num(v) * 1e6)} ${t("perKm2")}`;
+                case "total_population": return num(v) === null ? "–" : fmt(num(v));
+                case "area":
+                    if (num(v) === null) return "–";
+                    return isFacility ? `${fmt(num(v))} m²` : `${fmt(num(v) / 1e6, 2)} km²`;
+                case "ilce_adi": return esc(titleTr(v));
+                case "type_translated": {
+                    const [tr, en] = String(v).split(" / ");
+                    return esc(lang === "tr" ? tr.replace("Bulusma", "Buluşma") : en || tr);
+                }
+                default: return esc(v);
+            }
+        };
+
+        // ---------- figures ----------
+
+        const counts = CATS.map((c) => c.layer.getLayers().length);
+        const totals = { areas: 0, space: 0, hoods: hoodLayer.getLayers().length, pop: 0 };
+        CATS.forEach((c) => c.layer.eachLayer((l) => {
+            totals.areas += 1;
+            totals.space += num(l.feature.properties.area) || 0;
+        }));
+        hoodLayer.eachLayer((l) => { totals.pop += num(l.feature.properties.total_population) || 0; });
+
+        // ---------- rendering ----------
+
+        const $ = (id) => document.getElementById(id);
+
+        function render() {
+            document.documentElement.lang = lang;
+            document.title = t("docTitle");
+            document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+            document.querySelectorAll("[data-lang]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+            $("sources").innerHTML = t("sources");
+
+            $("figures").innerHTML = [
+                [fmt(totals.areas), t("figAreas")],
+                [fmt(totals.space / 1e6, 1), t("figSpace")],
+                [fmt(totals.hoods), t("figHoods")],
+                [t("million")(fmt(totals.pop / 1e6, 1)), t("figPop")],
+            ].map(([v, l]) => `<div><dt>${esc(l)}</dt><dd>${esc(v)}</dd></div>`).join("");
+
+            renderLegend();
+            renderCats();
+        }
+
+        // The legend reads the same color scale the map uses, shown per km² instead of per m².
+        function renderLegend() {
+            const [lo, hi] = colorMap.x.domain();
+            const pos = (v) => Math.max(0, Math.min(1, (v - lo) / (hi - lo))) * 100;
+            // The scale has no color past its last breakpoint, so the top end uses its darkest color.
+            const colorAt = (v) => colorMap.color(v) || colorMap.color.range().slice(-1)[0];
+            const stops = [];
+            for (let i = 0; i <= 20; i++) {
+                const v = lo + ((hi - lo) * i) / 20;
+                stops.push(`${colorAt(v)} ${pos(v)}%`);
+            }
+            $("gradient").style.background = `linear-gradient(to right, ${stops.join(", ")})`;
+            const ticks = [];
+            for (let k = 0; k * 1e4 <= hi * 1e6; k++) {
+                const label = k === 0 ? "0" : t("thousand")(fmt(k * 10));
+                ticks.push(`<span style="left:${pos(k * 1e4 / 1e6)}%">${esc(label)}</span>`);
+            }
+            $("ticks").innerHTML = ticks.join("");
+            $("toggleDensity").setAttribute("aria-checked", String(map.hasLayer(hoodLayer)));
+        }
+
+        function renderCats() {
+            const max = Math.max(...counts);
+            $("cats").innerHTML = CATS.map((c, i) => {
+                const on = map.hasLayer(c.group);
+                return `<li><button class="cat" type="button" data-cat="${i}" aria-pressed="${on}">
+                    <span class="cat-swatch" style="background:${c.color}"></span>
+                    <span class="cat-name">${esc(c[lang])}</span>
+                    <span class="cat-count">${fmt(counts[i])}</span>
+                    <span class="cat-bar"><i style="width:${(counts[i] / max) * 100}%;background:${c.color}"></i></span>
+                </button></li>`;
+            }).join("");
+            $("catsAll").hidden = CATS.every((c) => map.hasLayer(c.group));
+        }
+
+        // ---------- actions ----------
+
+        document.querySelectorAll("[data-lang]").forEach((b) => b.addEventListener("click", () => {
+            lang = b.dataset.lang;
+            try { localStorage.setItem("lang", lang); } catch (e) { /* storage unavailable */ }
+            map.eachLayer((l) => l.closeTooltip && l.closeTooltip());
+            render();
+        }));
+
+        $("toggleDensity").addEventListener("click", () => {
+            if (map.hasLayer(hoodLayer)) map.removeLayer(hoodLayer);
+            else {
+                map.addLayer(hoodLayer);
+                hoodLayer.bringToBack();
+            }
+            renderLegend();
+        });
+
+        $("cats").addEventListener("click", (e) => {
+            const b = e.target.closest("[data-cat]");
+            if (!b) return;
+            const group = CATS[Number(b.dataset.cat)].group;
+            if (map.hasLayer(group)) map.removeLayer(group);
+            else map.addLayer(group);
+            renderCats();
+        });
+
+        $("catsAll").addEventListener("click", () => {
+            CATS.forEach((c) => { if (!map.hasLayer(c.group)) map.addLayer(c.group); });
+            renderCats();
+        });
+
+        // "Data sources" button as a map control, bottom right above the attribution.
+        const sourcesButton = L.control({ position: "bottomright" });
+        sourcesButton.onAdd = () => {
+            const btn = L.DomUtil.create("button", "map-sources-btn");
+            btn.type = "button";
+            btn.id = "sourcesOpen";
+            btn.setAttribute("aria-haspopup", "dialog");
+            btn.dataset.i18n = "sourcesTitle";
+            L.DomEvent.disableClickPropagation(btn);
+            return btn;
+        };
+        sourcesButton.addTo(map);
+
+        const sourcesDialog = $("sourcesDialog");
+        $("sourcesOpen").addEventListener("click", () => sourcesDialog.showModal());
+        $("sourcesClose").addEventListener("click", () => sourcesDialog.close());
+        // A click on the backdrop lands on the <dialog> itself; clicks inside land on its content.
+        sourcesDialog.addEventListener("click", (e) => { if (e.target === sourcesDialog) sourcesDialog.close(); });
+
+        $("sheetHandle").addEventListener("click", () => {
+            const panel = $("panel");
+            const open = !panel.classList.contains("is-open");
+            panel.classList.toggle("is-open", open);
+            $("sheetHandle").setAttribute("aria-expanded", String(open));
+        });
+
+        render();
+    })();
 </script>
 </html>
